@@ -282,7 +282,33 @@
   .bar-fill{height:100%; background:var(--stamp-red); border-radius:999px; transition:width .4s ease;}
   .stat-row .sub{font-size:11px; color:var(--ink-soft); margin-top:6px;}
 
-  .reset-zone{margin-top:24px; text-align:center;}
+  .backup-zone{
+    background:var(--white);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:16px;
+    margin-top:20px;
+  }
+  .backup-title{font-weight:700; font-size:14px; margin-bottom:4px;}
+  .backup-desc{font-size:12px; color:var(--ink-soft); line-height:1.5; margin:0 0 12px;}
+  .backup-btns{display:flex; gap:8px;}
+  .backup-btns button, .backup-btns .import-label{
+    flex:1;
+    background:var(--paper);
+    border:1px solid var(--line);
+    color:var(--ink);
+    font-size:12.5px;
+    font-weight:600;
+    padding:10px 8px;
+    border-radius:10px;
+    cursor:pointer;
+    text-align:center;
+    display:flex; align-items:center; justify-content:center;
+    font-family:inherit;
+  }
+  .backup-btns button:active, .backup-btns .import-label:active{background:var(--paper-2);}
+
+  .reset-zone{margin-top:14px; text-align:center;}
   .reset-zone button{
     background:none; border:1px solid var(--line); color:var(--ink-soft);
     font-size:12px; padding:8px 16px; border-radius:999px; cursor:pointer;
@@ -375,6 +401,17 @@
         <div class="stat-box"><span class="num" id="statAvg">0%</span><span class="lbl">평균 출석률</span></div>
       </div>
       <div id="statList"></div>
+
+      <div class="backup-zone">
+        <div class="backup-title">데이터 백업</div>
+        <p class="backup-desc">기기가 바뀌거나 브라우저 데이터가 지워질 때를 대비해 파일로 저장해 두세요.</p>
+        <div class="backup-btns">
+          <button id="exportBtn">📤 내보내기 (저장)</button>
+          <label class="import-label" for="importFile">📥 가져오기 (복원)</label>
+          <input type="file" id="importFile" accept="application/json" hidden>
+        </div>
+      </div>
+
       <div class="reset-zone">
         <button id="resetBtn">전체 기록 초기화</button>
       </div>
@@ -639,6 +676,60 @@ function renderStats(){
     listEl.appendChild(row);
   });
 }
+
+// ---------- Backup: export / import ----------
+document.getElementById("exportBtn").addEventListener("click", ()=>{
+  const payload = {
+    _type: "attendance-pwa-backup",
+    _exportedAt: new Date().toISOString(),
+    data
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {type:"application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const dateStr = fmtDate(new Date());
+  const safeGroup = (data.groupName||"모임").replace(/[^a-zA-Z0-9가-힣]/g, "");
+  a.href = url;
+  a.download = `attendance-backup-${safeGroup}-${dateStr}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  showToast("백업 파일을 저장했어요");
+});
+
+document.getElementById("importFile").addEventListener("change", (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (evt)=>{
+    try{
+      const parsed = JSON.parse(evt.target.result);
+      const incoming = parsed && parsed._type === "attendance-pwa-backup" ? parsed.data : parsed;
+      if(!incoming || !Array.isArray(incoming.members) || typeof incoming.records !== "object"){
+        showToast("올바른 백업 파일이 아니에요");
+        return;
+      }
+      if(!confirm("현재 데이터를 이 백업 파일 내용으로 덮어쓸까요?\n(현재 기기의 기존 기록은 사라져요)")) return;
+      data = {
+        groupName: incoming.groupName || "우리 모임",
+        members: incoming.members || [],
+        records: incoming.records || {}
+      };
+      saveData();
+      groupNameInput.value = data.groupName;
+      renderDateBar();
+      renderMemberList();
+      renderMemberManage();
+      renderStats();
+      showToast("백업 파일을 불러왔어요");
+    }catch(err){
+      showToast("파일을 읽을 수 없어요");
+    }
+    e.target.value = "";
+  };
+  reader.readAsText(file);
+});
 
 document.getElementById("resetBtn").addEventListener("click", ()=>{
   if(!confirm("모든 출석 기록을 초기화할까요? 멤버 명단은 유지돼요.")) return;
